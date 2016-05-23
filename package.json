@@ -1,0 +1,30 @@
+{
+  "name": "node-hpscan",
+  "version": "1.0.0",
+  "description": "module for hp networked scanner",
+  "main": "index.js",
+  "dependencies": {
+    "async": "^2.0.0-rc.5",
+    "request": "^2.72.0",
+    "xml2js": "^0.4.16"
+  },
+  "devDependencies": {},
+  "scripts": {
+    "test": ""
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/heisice/node-hpscan.git"
+  },
+  "keywords": [
+    "hp",
+    "web",
+    "scanner"
+  ],
+  "author": "Ki-soo Kim <heisice@gmail.com>",
+  "license": "BSD-2-Clause",
+  "bugs": {
+    "url": "https://github.com/heisice/node-hpscan/issues"
+  },
+  "homepage": "https://github.com/heisice/node-hpscan#readme"
+}
