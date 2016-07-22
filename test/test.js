@@ -1,3 +1,5 @@
+var HP_Scanner = require("node-hpscan");
+
 var scanner = new HP_Scanner("hp8851fb08c4f1.local");
 
 scanner.status(function(err, result){
