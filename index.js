@@ -98,7 +98,7 @@ module.exports = HP_Scanner = function(hostname) {
 		});
 	};
 
-	this.scan = function(callback) {
+	this.scan = function(filename, callback) {
 
 		parent.prepare_scan(function(error) {
 			parent.recent_scan(function(err, result) {
@@ -112,7 +112,6 @@ module.exports = HP_Scanner = function(hostname) {
 						request.get({url:parent.scanner_prefix + page.binary_url, encoding:null}, function(err, res, raw) {
 							if (err) return callback(err);
 							if (res.statusCode == 200) {
-								var filename = 'scan_.pdf';
 								fs.writeFileSync(filename, raw);
 								return cb();
 							} 

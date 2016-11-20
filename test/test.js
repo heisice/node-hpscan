@@ -6,7 +6,7 @@ scanner.status(function(err, result){
 
 	if (result.state == "Idle") {
 
-		scanner.scan(function(error) {
+		scanner.scan("scan.pdf", function(error) {
 			if (error) return console.error(error);
 			console.log('Scan completed.');
 		});
