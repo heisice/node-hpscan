@@ -1,17 +1,32 @@
-var HP_Scanner = require("node-hpscan");
+const Scanner = require("../");
+const scanner = new Scanner("hp8851fb08c4f1.local");
 
-var scanner = new HP_Scanner("hp8851fb08c4f1.local");
+scanner.status((error, result) => {
 
-scanner.status(function(err, result){
+	if (error) {
+		console.error(error);
+		return;
+	}
 
 	if (result.state == "Idle") {
 
-		scanner.scan("scan.pdf", function(error) {
-			if (error) return console.error(error);
+		if (error) {
+			console.error(error);
+			return;
+		}
+
+		scanner.scan("scan.pdf", (error) => {
+			
+			if (error) {
+				console.error(error);
+				return;
+			}
+
 			console.log('Scan completed.');
 		});
 		
 		return;
 	}
+	
 	console.error('Scanner is busy. (' + result.state + ')');
 });

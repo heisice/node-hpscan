@@ -1,48 +1,135 @@
-var fs = require("fs");
-var async = require("async");
-var request = require("request");
-var parseString = require("xml2js").parseString;
+const fs = require("fs");
+const async = require("async");
+const request = require("request");
+const parseString = require("xml2js").parseString;
 
-module.exports = HP_Scanner = function(hostname) {
+class ScanJob {
+	
+	constructor(props) {
+		this.resolution = props && props.resolution || 300;
+		this.page_width = props && props.page_width || 2550;
+		this.page_height = props && props.page_height || 3300;
+		this.scan_format = props && props.scan_format || 'Pdf';
+		this.color_space = props && props.color_space || 'Gray';
+		this.gamma = props && props.gamma || 1000;
+		this.brightness = props && props.brightness || 1000;
+		this.contrast = props && props.contrast || 1000;
+		this.highlite = props && props.highlite || 179;
+		this.shadow = props && props.shadow || 25;
+	}
 
-	var parent = this;
+	xml() {
 
-	this.scanner_prefix = "http://" + hostname + "";
+		let body = `<scan:ScanJob xmlns:scan="http://www.hp.com/schemas/imaging/con/cnx/scan/2008/08/19"
+			xmlns:dd="http://www.hp.com/schemas/imaging/con/dictionaries/1.0/">
+			<scan:XResolution>${this.resolution}</scan:XResolution>
+			<scan:YResolution>${this.resolution}</scan:YResolution>
+			<scan:XStart>0</scan:XStart>
+			<scan:YStart>0</scan:YStart>
+			<scan:Width>${this.page_width}</scan:Width>
+			<scan:Height>${this.page_height}</scan:Height>
+			<scan:Format>${this.scan_format}</scan:Format>
+			<scan:CompressionQFactor>25</scan:CompressionQFactor>
+			<scan:ColorSpace>${this.color_space}</scan:ColorSpace>
+			<scan:BitDepth>8</scan:BitDepth>
+			<scan:InputSource>Platen</scan:InputSource>
+			<scan:GrayRendering>NTSC</scan:GrayRendering>
+			<scan:ToneMap>
+				<scan:Gamma>${this.gamma}</scan:Gamma>
+				<scan:Brightness>${this.brightness}</scan:Brightness>
+				<scan:Contrast>${this.contrast}</scan:Contrast>
+				<scan:Highlite>${this.highlite}</scan:Highlite>
+				<scan:Shadow>${this.shadow}</scan:Shadow>
+			</scan:ToneMap>
+			<scan:ContentType>Document</scan:ContentType>
+		</scan:ScanJob>`;
 
-	this.status = function(callback) {
-		request.get(parent.scanner_prefix + "/eSCL/ScannerStatus", function(err, res, xml) {
-			if (err) return callback(err);
-			parseString(xml, function(err, result) {
-			  if (err) return callback(err);
-			  var status = result["scan:ScannerStatus"];
-			  if (!status) return callback(new Error("XML parse error."))
-			  return callback(null, {
-			  	version: status["pwg:Version"] && status["pwg:Version"][0] || "",
-			  	state: status["pwg:State"] && status["pwg:State"][0] || "",
-			  	adf: status["scan:AdfState"] && status["scan:AdfState"][0].replace("ScannerAdf","") || ""
-			  });
+		return body;
+	}
+
+}
+
+class Scanner {
+
+	constructor(hostname) {
+		this.hostname = hostname;
+	}
+
+	endpoint(url, body, callback) {
+
+		let req = body ? request.post : request.get;
+
+		let headers = body ? {
+			'Content-Type': 'text/xml',
+			'Content-Length': Buffer.byteLength(body)
+		} : {};
+
+		req({url:`http://${this.hostname}/${url}`, headers:headers, body:body}, (err, res, xml) => {
+			
+			if (err) {
+				callback(err);
+				return;
+			}
+
+			if (res.statusCode == 201) {
+				return callback(null);
+			}
+
+			parseString(xml, (err, result) => {
+
+				if (err) {
+					callback(err);
+					return;
+				}
+				
+				if (!xml) {
+					callback(new Error('invalid response'));
+					return;
+				}
+
+				callback(null, result);
 			});
 		});
-	};
+	}
 
-	this.recent_scan = function(callback) {
-		request.get(parent.scanner_prefix + "/Jobs/JobList", function(err, res, xml) {
-			if (err) return callback(err);
-			parseString(xml, function(err, result) {
-				if (err) return callback(err);
-				var jobs = result["j:JobList"]["j:Job"];
-				if (!jobs) return callback(new Error('XML parse error'));
-				jobs = result["j:JobList"]["j:Job"]
-				.filter(function(x) {
+	status(callback) {
+		this.endpoint("eSCL/ScannerStatus", null, (err, xml) => {
+			
+			if (err) {
+				callback(err);
+				return;
+			}
+
+			let status = xml["scan:ScannerStatus"];
+			
+			return callback(null, {
+				version: status["pwg:Version"] && status["pwg:Version"][0] || "",
+				state: status["pwg:State"] && status["pwg:State"][0] || "",
+				adf: status["scan:AdfState"] && status["scan:AdfState"][0].replace("ScannerAdf","") || ""
+			});
+		})
+	}
+
+	recentScan(callback) {
+
+		this.endpoint("Jobs/JobList", null, (err, xml) => {
+
+			if (err) {
+				callback(err);
+				return;
+			}
+
+			let jobs = xml["j:JobList"]["j:Job"]
+				.filter((x) => {
 					return (
 						x["j:JobCategory"] && x["j:JobCategory"][0] == "Scan" &&
 						x["j:JobCategory"] && x["j:JobState"][0] != "Canceled"
 					);
 				})
 				.slice(-1)
-				.map(function(x) {
-					var pages = x["ScanJob"] && x["ScanJob"][0] && x["ScanJob"][0]["PreScanPage"];
-					pages = pages.map(function(x){
+				.map((x) => {
+					let pages = x["ScanJob"] && x["ScanJob"][0] && x["ScanJob"][0]["PreScanPage"]
+					.map((x) => {
 						return {
 							page_total: x.PageNumber && x.PageNumber[0],
 							page_state: x.PageState && x.PageState[0],
@@ -58,75 +145,80 @@ module.exports = HP_Scanner = function(hostname) {
 					};
 				})
 				.pop();
-  				return callback(null, jobs);
-			});
-		});
-	};
-
-	this.prepare_scan = function(callback) {
-
-		var body = ['<scan:ScanJob xmlns:scan="http://www.hp.com/schemas/imaging/con/cnx/scan/2008/08/19" xmlns:dd="http://www.hp.com/schemas/imaging/con/dictionaries/1.0/">',
-				'<scan:XResolution>300</scan:XResolution>', '<scan:YResolution>300</scan:YResolution>',
-				'<scan:XStart>0</scan:XStart>', '<scan:YStart>0</scan:YStart>',
-				'<scan:Width>2550</scan:Width>', '<scan:Height>3300</scan:Height>',
-				'<scan:Format>Pdf</scan:Format>',
-				'<scan:CompressionQFactor>25</scan:CompressionQFactor>',
-				'<scan:ColorSpace>Gray</scan:ColorSpace>',
-				'<scan:BitDepth>8</scan:BitDepth>',
-				'<scan:InputSource>Platen</scan:InputSource>',
-				'<scan:GrayRendering>NTSC</scan:GrayRendering>',
-				'<scan:ToneMap>',
-				'<scan:Gamma>1000</scan:Gamma>',
-				'<scan:Brightness>1000</scan:Brightness>',
-				'<scan:Contrast>1000</scan:Contrast>',
-				'<scan:Highlite>179</scan:Highlite>',
-				'<scan:Shadow>25</scan:Shadow>',
-				'</scan:ToneMap>',
-				'<scan:ContentType>Document</scan:ContentType>',
-				'</scan:ScanJob>'].join("\n");
-		var headers = {
-			'Content-Type': 'text/xml',
-			'Content-Length': Buffer.byteLength(body)
-		};
-
-		request.post({url:parent.scanner_prefix + "/Scan/Jobs", headers:headers, body:body}, function(err, res, body) {
-			if (err) return callback(err);
-			if (res.statusCode == 201) {
-				return callback(null);
+			
+			if (jobs.pages[0].page_state != 'ReadyToUpload') {
+				console.log("wait for upload...");
+				setTimeout(() => {
+					this.recentScan(callback);					
+				}, 500);
+				return;
 			}
-			return callback(new Error(""+res.statusCode));
+
+			return callback(null, jobs);
 		});
 	};
 
-	this.scan = function(filename, callback) {
+	prepareScan(callback) {
 
-		parent.prepare_scan(function(error) {
-			parent.recent_scan(function(err, result) {
+		let job = new ScanJob();
+
+		this.endpoint("Scan/Jobs", job.xml(), (err) => {
+			
+			if (err) {
+				callback(err);
+				return;
+			}
+
+			return callback(null);
+		});
+	}
+
+	scan(filename, callback) {
+
+		this.prepareScan((err) => {
+
+			if (err) {
+				callback(err);
+				return;
+			}
+
+
+			this.recentScan((err, result) => {
+
+				if (err) {
+					callback(err);
+					return;
+				}
 
 				if (!result.pages)
 					return callback(new Error('Scan failed.'));
 
-				async.eachSeries(result.pages, function(page, cb) {
-					if (page.page_state == "ReadyToUpload") {
-
-						request.get({url:parent.scanner_prefix + page.binary_url, encoding:null}, function(err, res, raw) {
-							if (err) return callback(err);
-							if (res.statusCode == 200) {
-								fs.writeFileSync(filename, raw);
-								return cb();
-							} 
-							return cb();
-						});			
+				async.eachSeries(result.pages, (page, cb) => {
+					
+					if (page.page_state != "ReadyToUpload") {
+						cb(new Error('not ready.'));
+						return;
 					}
-				}, function(error) {
-					return callback(error);
+
+					request.get({url:`http://${this.hostname}${page.binary_url}`, encoding:null}, (err, res, raw) => {
+						if (err) return callback(err);
+						if (res.statusCode == 200) {
+							fs.writeFileSync(filename, raw);
+							cb();
+							return;
+						}
+						cb();
+						return;
+					});
+
+				}, (error) => {
+					callback(error);
+					return;
 				});
 
 			});
 		});
+	}
+}
 
-	};
-
-};
-
-
+module.exports = Scanner;
